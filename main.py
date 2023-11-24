@@ -3,10 +3,10 @@ import json
 import logging
 import sys
 
-import numpy as np
+from openai import OpenAI
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def _generate(model,
@@ -72,58 +72,47 @@ def generate(model,
     )
 
 
-def evaluate(model_answers, file, enable_cuda):
+def evaluate(model_answers, file, api):
     # Load benchmark correct answers
     logging.info("Processing benchmark correct answers.")
     correct_answers = []
     for data in tqdm(read_jsonl(file), desc="Processing Benchmark Correct Answers", unit=" answer", smoothing=0.06):
         correct_answers.append(data["answer"])
 
-    # Enable CUDA GPU acceleration if specified
-    device = "cuda" if enable_cuda else "cpu"
-
-    # Load embedding model
-    logging.info("Loading embedding model.")
-    tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-large-en-v1.5")
-    model = AutoModel.from_pretrained("BAAI/bge-large-en-v1.5").to(device)
-
     # Ensure the number of answers are equal so `i` won't go out of bounds
     if not (len(model_answers) == len(correct_answers)):
-        print("Mismatch in the number of answers!")
+        logging.error("Mismatch in the number of answers!")
         sys.exit(1)
 
     # Compute the score of answers
     logging.info("Computing score of answers.")
-    similarity = 0
-    for i in tqdm(range(0, len(model_answers), 1), desc="Computing Score of Answers", unit="answer", smoothing=0.06):
-        model_answer_embed = generate_embedding(model_answers[i], tokenizer, model, device, 512)
-        correct_answer_embed = generate_embedding(correct_answers[i], tokenizer, model, device, 512)
-        similarity += compute_similarity(0.5, model_answer_embed, correct_answer_embed)
-    return similarity
+    client = OpenAI(
+        api_key=api,
+    )
 
-
-def generate_embedding(text, tokenizer, model, device, max_seq_len):
-    # Generate embedding for `text` with embedding model `model`
-    inputs = tokenizer(text, padding=True, truncation=True, max_length=max_seq_len, return_tensors="pt").to(device)
-    with torch.no_grad():
-        outputs = model(**inputs)
-        embeddings = outputs.last_hidden_state.mean(dim=1)
-    # Ensure that the embeddings are on CPU, required for NumPy
-    return embeddings.cpu().numpy()[0]
-
-
-def compute_similarity(alpha, model_ans_embed, correct_ans_embed):
-    # Computes cosine similarity and Euclidean similarity
-    norm_model_ans = model_ans_embed / np.linalg.norm(model_ans_embed)
-    norm_correct_ans = correct_ans_embed / np.linalg.norm(correct_ans_embed)
-    cosine_similarity = np.dot(norm_model_ans, norm_correct_ans)
-    euclidean_dist = np.linalg.norm(model_ans_embed - correct_ans_embed)
-    normalized_euclidean_similarity = 1 / (1 + euclidean_dist)
-
-    # Multiplies cosine similarity by a factor of `alpha` and Euclidean similarity by a factor of `1 - alpha`
-    similarity_score = alpha * cosine_similarity + (1 - alpha) * normalized_euclidean_similarity
-
-    return similarity_score
+    # Evaluate score with GPT-4
+    acc = 0
+    err = 0
+    for i in tqdm(range(0, len(model_answers), 1), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Answer 1: {model_answers[i]}\nAnswer 2: {correct_answers[i]}\nOutput \"True\" if "
+                               f"both answers carry the same information. Otherwise, output \"False\".",
+                },
+            ],
+            model="gpt-4",
+            temperature=0,
+        )
+        if "True" in chat_completion:
+            if "False" in chat_completion:
+                logging.error(f"Error in GPT-4 judging, both \"True\" and \"False\" are present. "
+                              f"GPT-4 response: {chat_completion}")
+                err += 100 / len(model_answers)
+            else:
+                acc += 100 / len(model_answers)
+    return [acc, err]
 
 
 def read_jsonl(file_path):
@@ -139,6 +128,7 @@ if __name__ == "__main__":
     parser.add_argument("model", type=str, help="Model to use")
     parser.add_argument("jsonl", type=str, nargs='?', default="test.jsonl", help="JSONL dataset")
     parser.add_argument("template", type=str, help="Prompt template to use")
+    parser.add_argument("api", type=str, help="OpenAI API key")
     parser.add_argument("--enablecuda", type=bool, default=False, help="Enable CUDA (True/False)")
     parser.add_argument("--precision", type=str, default="fp16", choices=["fp16", "fp32"], help="Precision mode")
     parser.add_argument("--maxnewtokens", type=int, default=1024, help="Maximum new tokens")
@@ -153,7 +143,7 @@ if __name__ == "__main__":
     }
     precision = precision_map.get(args.precision, None)
     if precision is None:
-        print("Invalid precision setting. Choose 'fp16' or 'fp32'.")
+        logging.error("Invalid precision setting. Choose 'fp16' or 'fp32'.")
         sys.exit(1)
 
     # Passes the arguments down for response generation
@@ -168,19 +158,20 @@ if __name__ == "__main__":
     )
 
     # Passes the arguments down for score evaluation
-    score = evaluate(answers, args.jsonl, args.enablecuda)
+    score = evaluate(answers, args.jsonl, args.api)
 
     # Prints the score
-    print(f"Score: {evaluate}")
+    print(f"Score: {score[0]}\nError: {score[1]}")
 
     # Save information
-    logging.info(f"Saving information to {args.savefile}")
+    logging.info(f"Saving information to {args.savefile}.")
     save = {
         "model": args.model,
         "template": args.template,
         "precision": args.precision,
         "maxnewtokens": args.maxnewtokens,
-        "score": score
+        "score": score[0],
+        "error": score[1],
     }
     with open(args.savefile, "w") as savefile_json:
         json.dump(save, savefile_json)
