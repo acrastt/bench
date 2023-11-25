@@ -207,5 +207,5 @@ if __name__ == "__main__":
             "score": score[0],
             "error": score[1],
         }
-        with open(args.savefile, "w") as savefile_json:
+        with open(args.savefile, "x") as savefile_json:
             json.dump(save, savefile_json)
