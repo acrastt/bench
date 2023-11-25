@@ -162,6 +162,7 @@ if __name__ == "__main__":
     # Check for valid dataset and save file
     if not Path(args.jsonl).exists():
         logging.error(f"Invalid dataset \"{args.jsonl}\".")
+        sys.exit(1)
     if not (args.savefile == "" or Path(args.savefile).is_file()):
         logging.error(f"Invalid save file \"{args.savefile}\".")
         sys.exit(1)
