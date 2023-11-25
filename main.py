@@ -110,14 +110,14 @@ def evaluate(model_answers, file, api):
         )
         if "True" in chat_completion:
             if "False" in chat_completion:
-                logging.error("Error in GPT-4 judging, both \"True\" and \"False\" are present. "
-                              f"GPT-4 response: \"{chat_completion}\"")
+                logging.warning("Error in GPT-4 judging, both \"True\" and \"False\" are present. "
+                                f"GPT-4 response: \"{chat_completion}\"")
                 err += length_percentile
             else:
                 acc += length_percentile
         elif "False" not in chat_completion:
-            logging.error("Error in GPT-4 judging, both \"True\" and \"False\" are not present. "
-                          f"GPT-4 response: \"{chat_completion}\"")
+            logging.warning("Error in GPT-4 judging, both \"True\" and \"False\" are not present. "
+                            f"GPT-4 response: \"{chat_completion}\"")
             err += length_percentile
     return acc, err
 
@@ -152,12 +152,13 @@ if __name__ == "__main__":
 
     # Check for valid precision
     if precision is None:
-        logging.error(f"Invalid precision setting \"{args.precision}\". Choose \"fp16\" or \"fp32\".")
+        logging.error(f"Invalid precision setting \"{args.precision}\". Choose \"fp16\" or \"fp32\". ")
         sys.exit(1)
 
     # Check for valid template
     if "{prompt}" not in args.template:
         logging.error(f"Invalid template \"{args.template}\", replace where the prompt goes with " + "\"{prompt}\".")
+        sys.exit(1)
 
     # Check for valid dataset and save file
     if not Path(args.jsonl).exists():
@@ -169,13 +170,14 @@ if __name__ == "__main__":
 
     # Check for valid CUDA configuration
     if args.enablecuda and not torch.cuda.is_available():
-        logging.error("CUDA is enabled, but CUDA is not available with PyTorch. "
-                      "Make sure you have CUDA installed and PyTorch compiled with CUDA. Disabling CUDA.")
+        logging.warning("CUDA is enabled, but CUDA is not available with PyTorch. "
+                        "Make sure you have CUDA installed and PyTorch compiled with CUDA. "
+                        "Automatically disabling CUDA.")
         args.enablecuda = False
 
     # Warn user when trust remote code was enabled
     if args.trustremotecode:
-        logging.info("Trust remote code is enabled, this is dangerous.")
+        logging.warning("Trust remote code is enabled, this is dangerous.")
 
     # Passes the arguments down for response generation
     answers = generate(
@@ -194,9 +196,9 @@ if __name__ == "__main__":
     # Prints the score
     print(f"Score: {score[0]}%\nError: +-{score[1]}%")
 
-    # Save information
+    # Save result
     if not args.savefile == "":
-        logging.info(f"Saving information to {args.savefile}.")
+        logging.info(f"Saving result to {args.savefile}.")
         save = {
             "model": args.model,
             "template": args.template,
