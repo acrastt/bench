@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import sys
+from pathlib import Path
 
 from openai import OpenAI
 import torch
@@ -85,13 +86,12 @@ def evaluate(model_answers, file, api):
 
     # Compute the score of answers
     logging.info("Computing score of answers.")
+    # Initialize OpenAI client
     client = OpenAI(
         api_key=api,
     )
-
     # Evaluate score with GPT-4
-    acc = 0
-    err = 0
+    acc = err = 0
     for i in tqdm(range(0, len(model_answers), 1), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
         chat_completion = client.chat.completions.create(
             messages=[
@@ -106,12 +106,12 @@ def evaluate(model_answers, file, api):
         )
         if "True" in chat_completion:
             if "False" in chat_completion:
-                logging.error(f"Error in GPT-4 judging, both \"True\" and \"False\" are present. "
-                              f"GPT-4 response: {chat_completion}")
+                logging.error("Error in GPT-4 judging, both \"True\" and \"False\" are present. "
+                              f"GPT-4 response: \"{chat_completion}\"")
                 err += 100 / len(model_answers)
             else:
                 acc += 100 / len(model_answers)
-    return [acc, err]
+    return acc, err
 
 
 def read_jsonl(file_path):
@@ -135,9 +135,6 @@ if __name__ == "__main__":
     parser.add_argument("--savefile", type=str, default="", help="Path for results to be saved")
     args = parser.parse_args()
 
-    if args.trustremotecode:
-        logging.info("Trust remote code is enabled, this is dangerous.")
-
     # Convert str to torch.dtype precision
     precision_map = {
         "fp16": torch.float16,
@@ -145,14 +142,29 @@ if __name__ == "__main__":
     }
     precision = precision_map.get(args.precision, None)
 
-    # Check for valid CUDA configuration
     if precision is None:
-        logging.error("Invalid precision setting. Choose 'fp16' or 'fp32'.")
+        logging.error(f"Invalid precision setting \"{args.precision}\". Choose \"fp16\" or \"fp32\".")
         sys.exit(1)
 
+    # Check for valid template
+    if "{prompt}" not in args.template:
+        logging.error(f"Invalid template \"{args.template}\", replace where the prompt goes with " + "\"{prompt}\".")
+
+    # Check for valid dataset and save file
+    if not Path(args.jsonl).exists():
+        logging.error(f"Invalid dataset \"{args.jsonl}\".")
+    if not (args.savefile == "" or Path(args.savefile).is_file()):
+        logging.error(f"Invalid save file \"{args.savefile}\".")
+        sys.exit(1)
+
+    # Check for valid CUDA configuration
     if args.enablecuda and not torch.cuda.is_available():
         logging.error("CUDA is enabled, but CUDA is not available with PyTorch. "
-                      "Make sure you have CUDA installed and PyTorch compiled with CUDA.")
+                      "Make sure you have CUDA installed and PyTorch compiled with CUDA. Disabling CUDA.")
+        args.enablecuda = False
+
+    if args.trustremotecode:
+        logging.info("Trust remote code is enabled, this is dangerous.")
 
     # Passes the arguments down for response generation
     answers = generate(
@@ -172,14 +184,15 @@ if __name__ == "__main__":
     print(f"Score: {score[0]}%\nError: +-{score[1]}%")
 
     # Save information
-    logging.info(f"Saving information to {args.savefile}.")
-    save = {
-        "model": args.model,
-        "template": args.template,
-        "precision": args.precision,
-        "maxnewtokens": args.maxnewtokens,
-        "score": score[0],
-        "error": score[1],
-    }
-    with open(args.savefile, "w") as savefile_json:
-        json.dump(save, savefile_json)
+    if not args.savefile == "":
+        logging.info(f"Saving information to {args.savefile}.")
+        save = {
+            "model": args.model,
+            "template": args.template,
+            "precision": args.precision,
+            "maxnewtokens": args.maxnewtokens,
+            "score": score[0],
+            "error": score[1],
+        }
+        with open(args.savefile, "w") as savefile_json:
+            json.dump(save, savefile_json)
