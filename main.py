@@ -94,7 +94,7 @@ def evaluate(model_answers, file, api):
     client = OpenAI(
         api_key=api,
     )
-    # Evaluate score with GPT-4
+    # Evaluate score with text-davinci-003
     acc = err = 0
     for i in tqdm(range(0, length, 1), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
         chat_completion = client.chat.completions.create(
@@ -182,8 +182,8 @@ if __name__ == "__main__":
         args.jsonl,
         args.template,
         args.enablecuda,
-        precision,
         args.maxnewtokens,
+        precision,
         args.trustremotecode
     )
 
