@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import sys
 
 from openai import OpenAI
@@ -16,6 +17,7 @@ def _generate(model,
               dtype,
               trust_remote_code, ):
     logging.info("Loading model.")
+    device = "cuda" if enable_cuda else "cpu"
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model)
     # Load model
@@ -25,8 +27,7 @@ def _generate(model,
         torch_dtype=dtype,
     )
     # Enable CUDA GPU acceleration for the model if specified
-    if enable_cuda:
-        model.to("cuda")
+    model.to(device)
 
     logging.info("Generating answers.")
     results = []
@@ -34,8 +35,7 @@ def _generate(model,
         # Tokenize the prompt
         prompt_tokenized = tokenizer(prompt, return_tensors="pt")
         # Enable CUDA GPU acceleration for the tokenized prompt if specified
-        if enable_cuda:
-            prompt_tokenized.to("cuda")
+        prompt_tokenized.to(device)
         # Generate response
         tokens = model.generate(
             **prompt_tokenized,
@@ -136,15 +136,24 @@ if __name__ == "__main__":
     parser.add_argument("--savefile", type=str, default="", help="Path for results to be saved")
     args = parser.parse_args()
 
+    if args.trustremotecode:
+        logging.info("Trust remote code is enabled, this is dangerous.")
+
     # Convert str to torch.dtype precision
     precision_map = {
         "fp16": torch.float16,
         "fp32": torch.float32
     }
     precision = precision_map.get(args.precision, None)
+
+    # Check for valid CUDA configuration
     if precision is None:
         logging.error("Invalid precision setting. Choose 'fp16' or 'fp32'.")
         sys.exit(1)
+
+    if args.enablecuda and not torch.cuda.is_available():
+        logging.error("CUDA is enabled, but CUDA is not available with PyTorch. "
+                      "Make sure you have CUDA installed and PyTorch compiled with CUDA.")
 
     # Passes the arguments down for response generation
     answers = generate(
@@ -161,7 +170,7 @@ if __name__ == "__main__":
     score = evaluate(answers, args.jsonl, args.api)
 
     # Prints the score
-    print(f"Score: {score[0]}\nError: {score[1]}")
+    print(f"Score: {score[0]}%\nError: +-{score[1]}%")
 
     # Save information
     logging.info(f"Saving information to {args.savefile}.")
