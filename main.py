@@ -101,7 +101,7 @@ def evaluate(model_answers, file, api):
                                f"both answers carry the same information. Otherwise, output \"False\".",
                 },
             ],
-            model="gpt-4",
+            model="text-davinci-003",
             temperature=0,
         )
         if "True" in chat_completion:
