@@ -79,8 +79,12 @@ def evaluate(model_answers, file, api):
     for data in tqdm(read_jsonl(file), desc="Processing Benchmark Correct Answers", unit=" answer", smoothing=0.06):
         correct_answers.append(data["answer"])
 
+    # Declaration of commonly used values
+    length = len(model_answers)
+    length_percentile = 100 / length
+
     # Ensure the number of answers are equal so `i` won't go out of bounds
-    if not (len(model_answers) == len(correct_answers)):
+    if not (length == len(correct_answers)):
         logging.error("Mismatch in the number of answers!")
         sys.exit(1)
 
@@ -92,7 +96,7 @@ def evaluate(model_answers, file, api):
     )
     # Evaluate score with GPT-4
     acc = err = 0
-    for i in tqdm(range(0, len(model_answers), 1), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
+    for i in tqdm(range(0, length, 1), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
         chat_completion = client.chat.completions.create(
             messages=[
                 {
@@ -108,9 +112,13 @@ def evaluate(model_answers, file, api):
             if "False" in chat_completion:
                 logging.error("Error in GPT-4 judging, both \"True\" and \"False\" are present. "
                               f"GPT-4 response: \"{chat_completion}\"")
-                err += 100 / len(model_answers)
+                err += length_percentile
             else:
-                acc += 100 / len(model_answers)
+                acc += length_percentile
+        elif "False" not in chat_completion:
+            logging.error("Error in GPT-4 judging, both \"True\" and \"False\" are not present. "
+                          f"GPT-4 response: \"{chat_completion}\"")
+            err += length_percentile
     return acc, err
 
 
@@ -142,6 +150,7 @@ if __name__ == "__main__":
     }
     precision = precision_map.get(args.precision, None)
 
+    # Check for valid precision
     if precision is None:
         logging.error(f"Invalid precision setting \"{args.precision}\". Choose \"fp16\" or \"fp32\".")
         sys.exit(1)
@@ -163,6 +172,7 @@ if __name__ == "__main__":
                       "Make sure you have CUDA installed and PyTorch compiled with CUDA. Disabling CUDA.")
         args.enablecuda = False
 
+    # Warn user when trust remote code was enabled
     if args.trustremotecode:
         logging.info("Trust remote code is enabled, this is dangerous.")
 
