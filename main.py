@@ -60,7 +60,8 @@ def generate(model,
     prompt = []
     for data in tqdm(read_jsonl(file), desc="Processing Benchmark Questions", unit=" question", smoothing=0.06):
         prompt.append(template.format(
-            prompt=f"Provide a concise response to the following question: {data['question']}"))
+            prompt=f"{data['question']}\nPlease format your final response as a single, concise sentence, "
+                   "preceded by \"[Answer]:\" on a new line for clarity and emphasis."))
 
     # Pass the parameters down to generate responses
     return _generate(
