@@ -60,8 +60,9 @@ def generate(model,
     prompt = []
     for data in tqdm(read_jsonl(file), desc="Processing Benchmark Questions", unit=" question", smoothing=0.06):
         prompt.append(template.format(
-            prompt=f"{data['question']}\nPlease format your final response as a single, concise sentence, "
-                   "preceded by \"[Answer]:\" on a new line for clarity and emphasis."))
+            prompt=f"{data['question']}\nFeel free to reason out loud before concluding. "
+                   f"Once you've reached your final answer, present it as a single, concise sentence on a new line, "
+                   f"starting with \"[Answer]:\" for clear emphasis."))
 
     # Pass the parameters down to generate responses
     return _generate(
@@ -81,9 +82,8 @@ def evaluate(model_answers, file, api):
     for data in tqdm(read_jsonl(file), desc="Processing Benchmark Correct Answers", unit=" answer", smoothing=0.06):
         correct_answers.append(data["answer"])
 
-    # Declaration of commonly used values
+    # Declaration of commonly used value
     length = len(model_answers)
-    length_percentile = 100 / length
 
     # Ensure the number of answers are equal so `i` won't go out of bounds
     if not (length == len(correct_answers)):
@@ -96,15 +96,29 @@ def evaluate(model_answers, file, api):
     client = OpenAI(
         api_key=api,
     )
-    # Evaluate score with text-davinci-003
+    # Evaluate score with GPT-4
     acc = err = 0
+    errs = []
     for i in tqdm(range(0, length, 1), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
+        # Declaration of commonly used value
+        answer = model_answers[i]
+        # Logic for bonus scores
+        if "\n[Answer]:" in answer:
+            answer = answer.split("\n[Answer]:")[1]
+            acc += 2
+        elif "[Answer]:" in answer:
+            answer = answer.split("[Answer]:")[1]
+            acc += 1
+        else:
+            continue
+
+        # Analyze with GPT-4
         chat_completion = client.chat.completions.create(
             messages=[
                 {
                     "role": "user",
-                    "content": f"Answer 1: {model_answers[i]}\nAnswer 2: {correct_answers[i]}\nOutput \"True\" if "
-                               f"both answers carry the same information. Otherwise, output \"False\".",
+                    "content": f"Answer 1: {answer}\nAnswer 2: {correct_answers[i]}\nOutput "
+                               f"\"True\" if both answers carry the same information. Otherwise, output \"False\".",
                 },
             ],
             model="gpt-4",
@@ -114,14 +128,15 @@ def evaluate(model_answers, file, api):
             if "False" in chat_completion:
                 logging.warning("Error in GPT-4 judging, both \"True\" and \"False\" are present. "
                                 f"GPT-4 response: \"{chat_completion}\"")
-                err += length_percentile
+                err += 3
             else:
-                acc += length_percentile
+                acc += 3
         elif "False" not in chat_completion:
             logging.warning("Error in GPT-4 judging, both \"True\" and \"False\" are not present. "
                             f"GPT-4 response: \"{chat_completion}\"")
-            err += length_percentile
-    return acc, err
+            err += 3
+    # How do I change `acc` and `err` to fit as a percentile out of 100%?
+    return acc, err, errs
 
 
 def read_jsonl(file_path):
