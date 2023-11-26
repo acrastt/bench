@@ -59,7 +59,8 @@ def generate(model,
     logging.info("Processing benchmark questions.")
     prompt = []
     for data in tqdm(read_jsonl(file), desc="Processing Benchmark Questions", unit=" question", smoothing=0.06):
-        prompt.append(template.format(prompt=data["question"]))
+        prompt.append(template.format(
+            prompt=f"Provide a concise response to the following question: {data['question']}"))
 
     # Pass the parameters down to generate responses
     return _generate(
@@ -105,7 +106,7 @@ def evaluate(model_answers, file, api):
                                f"both answers carry the same information. Otherwise, output \"False\".",
                 },
             ],
-            model="text-davinci-003",
+            model="gpt-4",
             temperature=0,
         )
         if "True" in chat_completion:
