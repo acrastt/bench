@@ -97,8 +97,8 @@ def evaluate(model_answers, file, api):
         api_key=api,
     )
     # Main logic
-    acc = inst = err = 0
-    for i in tqdm(range(length), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
+    acc = inst = acc_err = 0
+    for i in tqdm(range(length), desc="Evaluating answers with GPT-4", unit=" answer", smoothing=0.06):
         # Declaration of commonly used value
         answer = model_answers[i]
 
@@ -110,6 +110,7 @@ def evaluate(model_answers, file, api):
             answer = answer.split("[Answer]:")[1]
             inst += 1
         else:
+            acc_err += 1
             continue
 
         # Logic for acc
@@ -135,7 +136,7 @@ def evaluate(model_answers, file, api):
                                 f"GPT-4 response: \"{chat_completion}\"\nRetrying with 2 attempts.")
                 acc_reevaluate = reevaluate(message, client)
                 acc += acc_reevaluate
-                err += 1 - acc_reevaluate
+                acc_err += 1 - acc_reevaluate
             else:
                 acc += 1
         elif "False" not in chat_completion:
@@ -143,13 +144,13 @@ def evaluate(model_answers, file, api):
                             f"GPT-4 response: \"{chat_completion}\"\nRetrying with 2 attempts.")
             acc_reevaluate = reevaluate(message, client)
             acc += acc_reevaluate
-            err += 1 - acc_reevaluate
+            acc_err += 1 - acc_reevaluate
 
     # Convert raw scores into percentiles and return them
     acc_percent = (acc / length) * 100
     inst_percent = (inst / length) * 50
-    err_percent = (err / length) * 100
-    return acc_percent, inst_percent, err_percent
+    acc_err_percent = (acc_err / length) * 100
+    return acc_percent, inst_percent, acc_err_percent
 
 
 def reevaluate(prompt, client):
@@ -167,9 +168,8 @@ def reevaluate(prompt, client):
             temperature=0,
         )
         # Check whether GPT-4 makes an error in retries, if so, continue retrying until _ = 1
-        if "True" in chat_completion:
-            if "False" not in chat_completion:
-                return 1
+        if "True" in chat_completion and "False" not in chat_completion:
+            return 1
     # GPT-4 keeps making errors
     return 0
 
@@ -246,7 +246,7 @@ if __name__ == "__main__":
     score = evaluate(answers, args.jsonl, args.api)
 
     # Prints the score
-    print(f"Acc: {score[0]}%\nInst: {score[1]}%\nError: +={score[2]}%")
+    print(f"Acc: {score[0]}%\nInst: {score[1]}%\nAcc_err: +-{score[2]}%")
 
     # Save result
     if not args.savefile == "":
@@ -258,7 +258,7 @@ if __name__ == "__main__":
             "maxnewtokens": args.maxnewtokens,
             "acc": score[0],
             "inst": score[1],
-            "err": score[2],
+            "acc_err": score[2],
         }
         with open(args.savefile, "x") as savefile_json:
             json.dump(save, savefile_json)
