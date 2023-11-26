@@ -96,47 +96,82 @@ def evaluate(model_answers, file, api):
     client = OpenAI(
         api_key=api,
     )
-    # Evaluate score with GPT-4
-    acc = err = 0
-    errs = []
-    for i in tqdm(range(0, length, 1), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
+    # Main logic
+    acc = inst = err = 0
+    for i in tqdm(range(length), desc="Evaluating answers via GPT-4", unit=" answer", smoothing=0.06):
         # Declaration of commonly used value
         answer = model_answers[i]
-        # Logic for bonus scores
+
+        # Logic for inst
         if "\n[Answer]:" in answer:
             answer = answer.split("\n[Answer]:")[1]
-            acc += 2
+            inst += 2
         elif "[Answer]:" in answer:
             answer = answer.split("[Answer]:")[1]
-            acc += 1
+            inst += 1
         else:
             continue
 
+        # Logic for acc
+        # Message to query GPT-4 with
+        message = f"Answer 1: {answer}\nAnswer 2: {correct_answers[i]}\nOutput "
+        f"\"True\" if both answers carry the same information. Otherwise, output \"False\"."
         # Analyze with GPT-4
         chat_completion = client.chat.completions.create(
             messages=[
                 {
                     "role": "user",
-                    "content": f"Answer 1: {answer}\nAnswer 2: {correct_answers[i]}\nOutput "
-                               f"\"True\" if both answers carry the same information. Otherwise, output \"False\".",
+                    "content": message,
                 },
             ],
             model="gpt-4",
             temperature=0,
         )
+
+        # Process GPT-4 response
         if "True" in chat_completion:
             if "False" in chat_completion:
                 logging.warning("Error in GPT-4 judging, both \"True\" and \"False\" are present. "
-                                f"GPT-4 response: \"{chat_completion}\"")
-                err += 3
+                                f"GPT-4 response: \"{chat_completion}\"\nRetrying with 2 attempts.")
+                acc_reevaluate = reevaluate(message, client)
+                acc += acc_reevaluate
+                err += 1 - acc_reevaluate
             else:
-                acc += 3
+                acc += 1
         elif "False" not in chat_completion:
             logging.warning("Error in GPT-4 judging, both \"True\" and \"False\" are not present. "
-                            f"GPT-4 response: \"{chat_completion}\"")
-            err += 3
-    # How do I change `acc` and `err` to fit as a percentile out of 100%?
-    return acc, err, errs
+                            f"GPT-4 response: \"{chat_completion}\"\nRetrying with 2 attempts.")
+            acc_reevaluate = reevaluate(message, client)
+            acc += acc_reevaluate
+            err += 1 - acc_reevaluate
+
+    # Convert raw scores into percentiles and return them
+    acc_percent = (acc / length) * 100
+    inst_percent = (inst / length) * 50
+    err_percent = (err / length) * 100
+    return acc_percent, inst_percent, err_percent
+
+
+def reevaluate(prompt, client):
+    # Two retries
+    for _ in tqdm(range(2), desc="Retrying GPT-4 evaluation", unit=" answer", smoothing=0.06):
+        # Analyze with GPT-4
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            model="gpt-4",
+            temperature=0,
+        )
+        # Check whether GPT-4 makes an error in retries, if so, continue retrying until _ = 1
+        if "True" in chat_completion:
+            if "False" not in chat_completion:
+                return 1
+    # GPT-4 keeps making errors
+    return 0
 
 
 def read_jsonl(file_path):
@@ -211,7 +246,7 @@ if __name__ == "__main__":
     score = evaluate(answers, args.jsonl, args.api)
 
     # Prints the score
-    print(f"Score: {score[0]}%\nError: +-{score[1]}%")
+    print(f"Acc: {score[0]}%\nInst: {score[1]}%\nError: +={score[2]}%")
 
     # Save result
     if not args.savefile == "":
@@ -221,8 +256,9 @@ if __name__ == "__main__":
             "template": args.template,
             "precision": args.precision,
             "maxnewtokens": args.maxnewtokens,
-            "score": score[0],
-            "error": score[1],
+            "acc": score[0],
+            "inst": score[1],
+            "err": score[2],
         }
         with open(args.savefile, "x") as savefile_json:
             json.dump(save, savefile_json)
