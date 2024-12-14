@@ -202,10 +202,10 @@ def re_evaluate(model,
 
 		# Do not include the prompt template and the answer, just the respons
 		evaluation = tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
+		#print(evaluation)
 
 		# Check whether the evaluator makes an error in retries
 		if "True" in evaluation and "False" not in evaluation:
-			#print(evaluation)
 			return 1
 
 	# Evaluator keeps making errors
