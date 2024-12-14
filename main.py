@@ -70,7 +70,7 @@ def generate(model,
 		# Do not include the prompt template and the answer, just the response
 		answers.append(tokenizer.batch_decode(tokens, skip_special_tokens=True)[0])
 
-	print(answers)
+	#print(answers)
 	return answers
 
 
@@ -157,6 +157,7 @@ def evaluate(answers,
 
 		# Do not include the prompt template and the answer, just the respons
 		evaluation = tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
+		#print(evaluation)
 
 		# Process evaluator response and look for errors
 		if "True" in evaluation:
@@ -204,6 +205,7 @@ def re_evaluate(model,
 
 		# Check whether the evaluator makes an error in retries
 		if "True" in evaluation and "False" not in evaluation:
+			#print(evaluation)
 			return 1
 
 	# Evaluator keeps making errors
