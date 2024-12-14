@@ -1,8 +1,3 @@
-{
-	"question": "What is the atomic number of hydrogen?",
-	"answer": "The atomic number of hydrogen is 1."
-}
-{
-	"question": "Who painted the Mona Lisa?",
-	"answer": "Leonardo da Vinci."
-}
+{"question": "What is the atomic number of hydrogen?", "answer": "1"}
+{"question": "Who painted the Mona Lisa?","answer": "Leonardo da Vinci"}
+{"question": "What colour is the sky?","answer": "Blue"}
