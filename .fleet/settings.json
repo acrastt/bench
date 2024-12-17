@@ -1,4 +1,5 @@
 {
 	"editor.formatOnSave": false,
-	"prettier.mode": "Enabled"
+	"prettier.mode": "Enabled",
+	"backend.maxHeapSizeMb": 1487
 }
